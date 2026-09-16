@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | 1 | [MLIR concepts](README-summary.md) | Why IR, SSA, dialects, operations, passes, traits |
 | 2 | [Writing MLIR](README-writing-mlir.md) | `module`, functions, types, `return`, FileCheck, lit |
+| 3 | [MLIR tools](README-tools.md) | `mlir-opt`, `mlir-translate`, runner, tblgen |
 
 ```mermaid
 flowchart LR
@@ -26,12 +27,14 @@ flowchart LR
    `module`, functions, types, `return`
 4. **Testing** — same writing page, FileCheck + lit sections  
    `// CHECK` + `// RUN:` + `llvm-lit`
+5. **Tools** — [MLIR tools](README-tools.md)  
+   `mlir-opt`, `mlir-translate`, `mlir-cpu-runner`, `mlir-tblgen`
 
 ---
 
 ## Run the tools
 
-From a build as in the [README](../README.md):
+From a build as in the [README](../README.md). Full map of binaries: [MLIR tools](README-tools.md).
 
 ```bash
 # See the printed IR
@@ -72,3 +75,4 @@ If your clone is not under `/home`, use `llvm-project/build/bin/mlir-opt` and a 
 | --- | --- |
 | [MLIR concepts](README-summary.md) | IR, SSA, dialects (`arith`, `func`, `scf`, `tensor`, `memref`, `linalg`, `affine`), operations, optimize vs lower, traits |
 | [Writing MLIR](README-writing-mlir.md) | How to write a file, `func.call`, FileCheck directives, lit `RUN` lines |
+| [MLIR tools](README-tools.md) | Binaries in `build/bin/`: opt, translate, runner, tblgen, lsp |

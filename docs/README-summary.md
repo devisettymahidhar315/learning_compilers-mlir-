@@ -1,6 +1,6 @@
 # MLIR concepts
 
-[Getting started](getting-started.md) · [Writing MLIR](README-writing-mlir.md) · [Build](../README.md)
+[Getting started](getting-started.md) · [Writing MLIR](README-writing-mlir.md) · [MLIR tools](README-tools.md) · [Build](../README.md)
 
 **MLIR** = Multi-Level Intermediate Representation. File extension: `.mlir`.
 
@@ -228,18 +228,20 @@ A **pass** walks the IR and does a **transformation**, **optimization**, or **an
 | --- | --- | --- |
 | Goal | Better IR, **same** level | Next **lower** dialect |
 | Dialects | Usually stay | Change (`linalg` → `scf` → `cf` → `llvm`) |
-| Example pass | `canonicalize`, `cse` | `convert-scf-to-cf` |
+| Example pass | `canonicalize`, `cse`, `symbol-dce` | `convert-scf-to-cf` |
 | Example rewrite | `20+30` → `50` | `scf.if` → `cf.cond_br` |
 
 **Dialect = vocabulary. Pass = rewrite.**
 
-Run with `mlir-opt` (or a PassManager). A **pipeline** is a list of passes.
+Run **both** kinds with `mlir-opt` (or a PassManager). A **pipeline** is a list of passes.
+
+`mlir-translate` is **not** a lowering pass. It only changes format (MLIR `llvm` dialect ↔ LLVM IR) after `mlir-opt` has already lowered to `llvm`. See [MLIR tools](README-tools.md#optimize-vs-lower-vs-translate).
 
 ### Optimize
 
 Same dialect. Meaning unchanged; IR smaller or simpler.
 
-`canonicalize`, `cse`, `dce`, inliner, fusion, tiling, …
+`canonicalize`, `cse`, `symbol-dce`, inliner, fusion, tiling, …
 
 ```mlir
 # before

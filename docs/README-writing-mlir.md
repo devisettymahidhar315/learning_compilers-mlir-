@@ -1,6 +1,6 @@
 # Writing MLIR
 
-[Getting started](getting-started.md) · [MLIR concepts](README-summary.md) · [Build](../README.md)
+[Getting started](getting-started.md) · [MLIR concepts](README-summary.md) · [MLIR tools](README-tools.md) · [Build](../README.md)
 
 - [module vs no module](#1-module--vs-no-module)
 - [Smallest example](#2-smallest-example-line-by-line)
@@ -388,7 +388,7 @@ Other substitutions: `%S` source dir, `%t` temp file, `%T` temp dir.
 
 ## 9. Commands to run on this machine
 
-Tools are in the LLVM build `bin` directory.
+More on each binary: [MLIR tools](README-tools.md). Tools are in the LLVM build `bin` directory.
 
 | Tool | What it does | Command |
 | --- | --- | --- |

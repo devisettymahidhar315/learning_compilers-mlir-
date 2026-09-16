@@ -8,6 +8,7 @@ After the build, start at **[Getting started](docs/getting-started.md)**.
 | --- | --- |
 | **This page** | Clone llvm-project, CMake + Ninja, `check-mlir` |
 | [Getting started](docs/getting-started.md) | How to read IR, run `mlir-opt` / lit, and the rest of the notes |
+| [MLIR tools](docs/README-tools.md) | `mlir-opt`, `mlir-translate`, runner, tblgen, FileCheck / lit |
 
 ---
 
@@ -51,4 +52,4 @@ The first configure + `check-mlir` takes a long time.
 | `-DLLVM_ENABLE_LLD=ON` | Link with lld (faster than ld) |
 | `-DLLVM_CCACHE_BUILD=ON` | Cache compiles for rebuilds |
 
-**Next:** [Getting started](docs/getting-started.md) — run the tools, then read concepts and how to write `.mlir`.
+**Next:** [Getting started](docs/getting-started.md) — run the tools, then read concepts, how to write `.mlir`, and [the binaries](docs/README-tools.md).
