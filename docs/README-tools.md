@@ -9,6 +9,7 @@ After [build](../README.md), binaries are in `llvm-project/build/bin/`.
 - [Optimize vs lower vs translate](#optimize-vs-lower-vs-translate)
 - [How they fit](#how-they-fit)
 - [mlir-opt](#1-mlir-opt)
+- [Debugging the pipeline](#debugging-the-pipeline)
 - [mlir-translate](#2-mlir-translate)
 - [mlir-cpu-runner](#3-mlir-cpu-runner--mlir-runner)
 - [FileCheck and lit](#4-filecheck-and-lit)
@@ -178,6 +179,66 @@ mlir-opt a.mlir --pass-pipeline='builtin.module(canonicalize,cse,symbol-dce,conv
 
 Optimize, then lower, then optimize again at the new level.
 
+### Debugging the pipeline
+
+Two different questions: **which passes will run**, and **what did the IR look like after each one**.
+
+**`--dump-pass-pipeline`**  
+Prints the pass manager as text: the list of passes, nested on which op (`builtin.module`, `func.func`, …). It does **not** print IR. Use it to confirm order, nesting, and that the flags you passed actually built the pipeline you think you built.
+
+```bash
+mlir-opt a.mlir --canonicalize --cse --symbol-dce --dump-pass-pipeline
+```
+
+```text
+Pass Manager with 1 passes:
+builtin.module(
+  canonicalize,
+  cse,
+  symbol-dce
+)
+```
+
+**`--mlir-print-ir-after-all`**  
+After **every** pass, prints a banner (`// -----// IR Dump After Canonicalizer`) and the IR at that point. This is how you see which pass folded a constant, deleted a function, or introduced `llvm.*` ops. Output can be large; scroll dump-to-dump.
+
+```bash
+mlir-opt a.mlir --canonicalize --cse --symbol-dce --mlir-print-ir-after-all
+```
+
+```text
+// -----// IR Dump After Canonicalizer (builtin.module op)
+module {
+  func.func @keep() -> i32 {
+    %0 = arith.constant 1 : i32
+    return %0 : i32
+  }
+}
+// -----// IR Dump After CSE (builtin.module op)
+...
+```
+
+Use them together: `--dump-pass-pipeline` is the **plan**; `--mlir-print-ir-after-all` is the **trace**.
+
+Related:
+
+**`--mlir-print-ir-before-all`**  
+Same dumps, but **before** each pass. Pair with after-all when a pass crashes: before-all is the IR that went in.
+
+**`--mlir-print-ir-after-change`**  
+Like after-all, but skips passes that left the IR unchanged. Quieter when you only care about passes that did work.
+
+**`--mlir-print-ir-after=cse`** / **`--mlir-print-ir-before=cse`**  
+Dump only around one pass name. Use this when after-all is too noisy.
+
+**`--mlir-disable-threading`**  
+Runs passes on one thread so dumps do not interleave. Turn this on whenever you print IR around passes.
+
+```bash
+mlir-opt a.mlir --canonicalize --cse --symbol-dce \
+  --dump-pass-pipeline --mlir-print-ir-after-all --mlir-disable-threading
+```
+
 ### Other mlir-opt flags
 
 **`-o file`**  
@@ -189,12 +250,6 @@ Treat `// -----` as a separator: each chunk is parsed and run independently. MLI
 **`--verify-diagnostics`**  
 For tests that *expect* a verifier or pass error. FileCheck then matches `expected-error` comments instead of requiring a clean parse.
 
-**`--mlir-print-ir-after-all`**  
-Prints the IR after every pass in the pipeline. Use this to see which pass actually changed something.
-
-**`--mlir-print-ir-before-all`**  
-Prints the IR before every pass. Pair it with after-all when a pass fails and you need the input that triggered it.
-
 **`--show-dialects`**  
 Lists dialects linked into this `mlir-opt`. If a dialect is missing here, the binary cannot parse those ops.
 
@@ -203,7 +258,6 @@ Parse ops whose dialect is not registered (`foo.bar`). Fine for sketches; the ve
 
 ```bash
 mlir-opt --show-dialects
-mlir-opt a.mlir --canonicalize --symbol-dce --mlir-print-ir-after-all
 ```
 
 ### It does not execute
@@ -358,8 +412,12 @@ $BIN/mlir-opt $MLIR
 $BIN/mlir-opt $MLIR --canonicalize
 $BIN/mlir-opt $MLIR --canonicalize --cse --symbol-dce
 
-# see IR after each pass
-$BIN/mlir-opt $MLIR --canonicalize --cse --mlir-print-ir-after-all
+# which passes will run (no IR dump)
+$BIN/mlir-opt $MLIR --canonicalize --cse --symbol-dce --dump-pass-pipeline
+
+# IR after every pass
+$BIN/mlir-opt $MLIR --canonicalize --cse --symbol-dce \
+  --mlir-print-ir-after-all --mlir-disable-threading
 
 # dialects this binary knows
 $BIN/mlir-opt --show-dialects
