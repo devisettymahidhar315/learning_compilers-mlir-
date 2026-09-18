@@ -20,6 +20,7 @@ After [build](../README.md), binaries are in `llvm-project/build/bin/`.
 - [mlir-lsp-server](#6-mlir-lsp-server)
 - [Other](#7-other)
 - [Commands on this machine](#8-commands-on-this-machine)
+- [Cheat sheet](#9-cheat-sheet)
 
 ---
 
@@ -734,3 +735,79 @@ $BIN/llvm-lit -v $MLIR
 ```
 
 If `mlir-cpu-runner` is missing, try `$BIN/mlir-runner` with the same flags.
+
+---
+
+## 9. Cheat sheet
+
+### Tools
+
+| Tool | What it does | Output format |
+| --- | --- | --- |
+| **mlir-opt** | Runs passes: transform, optimize, lower | Still MLIR (textual) |
+| **mlir-translate** | Converts MLIR to another representation (`--mlir-to-llvmir`) | Leaves MLIR → LLVM IR (`.ll`) |
+| **mlir-tblgen** | Generates C++ boilerplate from `.td` (TableGen) files | C++ `.h.inc` / `.cpp.inc` |
+| **mlir-cpu-runner** | JIT-executes lowered IR | A numeric result, not IR |
+
+### Common `mlir-opt` flags
+
+| Flag | Name | What it does | Example |
+| --- | --- | --- | --- |
+| `--cse` | Common subexpression elimination | Merges identical ops into one (dedup only) | two `muli %x, %x` → one |
+| `--canonicalize` | Canonicalize | Fold, identities (`x+0→x`), DCE, canonical form | `10+10` → `20`; drops `+0` |
+| `--inline` | Inliner | Replaces a call with the callee’s body | `call @square(%a)` → `muli %a, %a` |
+| `--symbol-dce` | Symbol DCE | Deletes **private** unreferenced functions/symbols | removes unused `private @foo` |
+| `--convert-scf-to-cf` | SCF → CF | Lowers `scf.for` / `scf.if` to branches | only affects `scf` ops |
+| `--convert-arith-to-llvm` / `--convert-func-to-llvm` | Lower to LLVM dialect | Ops become `llvm.*` (**still MLIR**) | `arith.addi` → `llvm.add` |
+| `--convert-to-llvm` | Convert to LLVM | One flag that lowers several dialects toward LLVM dialect | still MLIR, not `.ll` |
+
+`--convert-*-to-llvm` is **lowering** (`mlir-opt`). `--mlir-to-llvmir` is **format** (`mlir-translate`).
+
+### CSE vs canonicalize
+
+| Aspect | `--cse` | `--canonicalize` |
+| --- | --- | --- |
+| Core job | Deduplicate identical ops | Simplify / fold individual ops |
+| `x + 0` → `x` | No | Yes |
+| Constant folding (`10+10` → `20`) | No | Yes |
+| Merge two identical `muli` | Yes | No |
+| Compares ops against each other | Yes | No |
+
+Worked dumps: [CSE vs canonicalize](#cse-vs-canonicalize).
+
+### Operation-level vs symbol-level
+
+| Level | Passes | Needs |
+| --- | --- | --- |
+| Operation (inside a function) | `--cse`, `--canonicalize` | foldable or duplicate ops |
+| Function call | `--inline` | at least one `call` |
+| Symbol / whole function | `--symbol-dce` | `private` **and** unreferenced |
+
+### Pipeline construction
+
+| Command form | Who builds the pipeline | Order comes from |
+| --- | --- | --- |
+| `--cse --canonicalize …` (separate flags) | `mlir-opt` auto-assembles and wraps in `builtin.module(...)` | order of flags on the command line |
+| `--pass-pipeline='builtin.module(...)'` | You write the structure, nest, and options | order you type in the string |
+
+`builtin.module(...)` is the **anchor op** the passes run on. Both forms create a **pass manager**; one is auto-built, one is hand-written. Details: [Pass manager](#pass-manager).
+
+### Inspection / debugging
+
+| Flag | Without it | With it |
+| --- | --- | --- |
+| `--dump-pass-pipeline` | assembled pipeline not shown | prints the `builtin.module(...)` pipeline (then still runs) |
+| `--mlir-print-ir-after-all` | no intermediate IR | prints the IR after every pass |
+| `--mlir-print-ir-after-change` | every pass dumps | dump only when IR actually changed |
+| `--mlir-disable-threading` | dumps may interleave | one thread, readable dumps |
+
+`--dump-pass-pipeline` = the **plan**. `--mlir-print-ir-after-all` = the **trace**.
+
+### Visibility (inlining + DCE)
+
+| Visibility | Can `--symbol-dce` remove it? | Why |
+| --- | --- | --- |
+| **public** (default) | Never | outside code might call it |
+| **private** | Yes, if unreferenced | compiler knows it is internal-only |
+
+`--inline` never deletes the original function. After inlining, a **private** unused callee is what `--symbol-dce` can drop.
