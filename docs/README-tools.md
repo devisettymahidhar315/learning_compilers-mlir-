@@ -9,6 +9,9 @@ After [build](../README.md), binaries are in `llvm-project/build/bin/`.
 - [Optimize vs lower vs translate](#optimize-vs-lower-vs-translate)
 - [How they fit](#how-they-fit)
 - [mlir-opt](#1-mlir-opt)
+- [CSE vs canonicalize](#cse-vs-canonicalize)
+- [inline](#inline)
+- [Pass manager](#pass-manager)
 - [Debugging the pipeline](#debugging-the-pipeline)
 - [mlir-translate](#2-mlir-translate)
 - [mlir-cpu-runner](#3-mlir-cpu-runner--mlir-runner)
@@ -65,7 +68,7 @@ Passes are mostly **two kinds**. Both run on **mlir-opt**.
 **mlir-translate is not lowering.** Lowering is `scf` → `cf` → `llvm` *inside MLIR*. Translate only changes **format** after that: MLIR `llvm` dialect text ↔ LLVM IR (`.ll`). It does not run `--canonicalize` or `--convert-scf-to-cf`.
 
 ```text
-optimize     mlir-opt --canonicalize --cse --symbol-dce
+optimize     mlir-opt --canonicalize --cse --inline --symbol-dce
 lower        mlir-opt --convert-scf-to-cf --convert-arith-to-llvm
 format       mlir-translate --mlir-to-llvmir     ← not a pass
 ```
@@ -119,6 +122,7 @@ mlir-opt a.mlir -o out.mlir
 ```bash
 mlir-opt a.mlir --canonicalize
 mlir-opt a.mlir --cse
+mlir-opt a.mlir --inline
 mlir-opt a.mlir --symbol-dce
 mlir-opt a.mlir --convert-scf-to-cf
 ```
@@ -130,6 +134,195 @@ Folds and simplifies ops using their canonical patterns. Dialects stay the same:
 
 **`--cse`**  
 Common subexpression elimination: if two ops compute the same thing, keep one and reuse the SSA value. Safe for ops without side effects (`Pure`). Does not change dialect.
+
+### CSE vs canonicalize
+
+Same level (optimize), different job. CSE looks **across** ops. Canonicalize looks **at** one op and folds it.
+
+| | **CSE** | **Canonicalize** |
+| --- | --- | --- |
+| Core job | Merge identical ops | Simplify / fold individual ops |
+| `x + 0` → `x` | No | Yes |
+| Constant folding (`10 + 10` → `20`) | No | Yes |
+| Dedup two identical `muli` / `addi` | Yes | No |
+| Compares ops against each other | Yes | No |
+
+#### Example: duplicate constants (`10 + 10`)
+
+```mlir
+module {
+  func.func @add() -> (i32, i32) {
+    %0 = arith.constant 10 : i32
+    %1 = arith.constant 10 : i32
+    %2 = arith.addi %0, %1 : i32
+    %3 = arith.addi %0, %1 : i32
+    return %2, %3 : i32, i32
+  }
+}
+```
+
+Two constants that happen to be `10`, and two **identical** adds of those values. CSE and canonicalize do not do the same rewrite.
+
+**`--cse`** — merge duplicates, do **not** fold `10 + 10`:
+
+```bash
+mlir-opt a.mlir --cse
+```
+
+```mlir
+module {
+  func.func @add() -> (i32, i32) {
+    %c10_i32 = arith.constant 10 : i32
+    %0 = arith.addi %c10_i32, %c10_i32 : i32
+    return %0, %0 : i32, i32
+  }
+}
+```
+
+`%0` and `%1` were the same constant → one `%c10_i32`. `%2` and `%3` were the same add → one `%0`, returned twice. The add is still there; CSE never computes `20`.
+
+**`--canonicalize`** — fold each add, do **not** keep a redundant `addi`:
+
+```bash
+mlir-opt a.mlir --canonicalize
+```
+
+```mlir
+module {
+  func.func @add() -> (i32, i32) {
+    %c20_i32 = arith.constant 20 : i32
+    return %c20_i32, %c20_i32 : i32, i32
+  }
+}
+```
+
+Each `arith.addi` of two `10`s becomes `arith.constant 20`. The two result values are that same constant. Canonicalize did not “dedup the two adds”; it simplified each add on its own, and the adds disappeared.
+
+#### Example: duplicate `muli` and `x + 0`
+
+This is the opposite split: CSE can merge the two multiplies; canonicalize can fold `x + 0`. Neither pass does the other job.
+
+```mlir
+module {
+  func.func @demo(%x: i32) -> i32 {
+    %c0 = arith.constant 0 : i32
+    %a = arith.muli %x, %x : i32
+    %b = arith.muli %x, %x : i32
+    %s = arith.addi %a, %c0 : i32
+    %t = arith.addi %s, %b : i32
+    return %t : i32
+  }
+}
+```
+
+`mlir-opt` may print `%x` as `%arg0` and `%c0` as `%c0_i32`. Same IR.
+
+| Op in source | `--cse` | `--canonicalize` |
+| --- | --- | --- |
+| duplicate `muli %x, %x` | merged | left as-is |
+| `addi %a, 0` (`x + 0`) | left as-is | folded to `%a` |
+
+**`--cse`** — one multiply; the `+ 0` stays:
+
+```bash
+mlir-opt a.mlir --cse
+```
+
+```mlir
+module {
+  func.func @demo(%arg0: i32) -> i32 {
+    %c0_i32 = arith.constant 0 : i32
+    %0 = arith.muli %arg0, %arg0 : i32
+    %1 = arith.addi %0, %c0_i32 : i32
+    %2 = arith.addi %1, %0 : i32
+    return %2 : i32
+  }
+}
+```
+
+`%a` and `%b` were the same `muli` → one `%0`, used twice (`%1` and `%2`). CSE does not know that `%x + 0` is `%x`, so `%c0_i32` and that `addi` remain. `%t` is still “(%a + 0) + %a”.
+
+**`--canonicalize`** — drop `+ 0`; two multiplies stay:
+
+```bash
+mlir-opt a.mlir --canonicalize
+```
+
+```mlir
+module {
+  func.func @demo(%arg0: i32) -> i32 {
+    %0 = arith.muli %arg0, %arg0 : i32
+    %1 = arith.muli %arg0, %arg0 : i32
+    %2 = arith.addi %0, %1 : i32
+    return %2 : i32
+  }
+}
+```
+
+`arith.addi %a, %c0` is the identity `x + 0` → replaced by `%a`. `%c0` has no users left, so it disappears. Canonicalize never compares the two `muli` ops, so `%x * %x` is still computed twice and then added.
+
+Together they finish the job: `--canonicalize --cse` folds `+ 0` **and** keeps a single `muli`. Canonicalize first is the usual habit.
+
+### inline
+
+**`--inline`**  
+Replace a **call** with a copy of the callee’s body. That removes call overhead and exposes the callee’s ops to later `--canonicalize` / `--cse`. It is still an optimize pass: dialects stay the same.
+
+Inlining needs a **caller** and a **callee**. A file with only arithmetic and no `func.call` / `call` does nothing — there is no call site to replace.
+
+| | `--inline` | `--symbol-dce` |
+| --- | --- | --- |
+| Job | Copy the callee body into the caller | Delete unused **private** symbols |
+| Needs | A call op | A function nobody references |
+| Deletes the original function? | **No** | Yes, if `private` and unused |
+
+```mlir
+module {
+  func.func @square(%x: i32) -> i32 {
+    %0 = arith.muli %x, %x : i32
+    return %0 : i32
+  }
+  func.func @main(%a: i32) -> i32 {
+    %r = func.call @square(%a) : (i32) -> i32
+    return %r : i32
+  }
+}
+```
+
+`@main` calls `@square`. That call is what `--inline` rewrites.
+
+```bash
+mlir-opt a.mlir --inline
+```
+
+```mlir
+module {
+  func.func @square(%arg0: i32) -> i32 {
+    %0 = arith.muli %arg0, %arg0 : i32
+    return %0 : i32
+  }
+  func.func @main(%arg0: i32) -> i32 {
+    %0 = arith.muli %arg0, %arg0 : i32
+    return %0 : i32
+  }
+}
+```
+
+What changed, line by line:
+
+1. The `func.call @square` inside `@main` is **gone**.
+2. In its place, `--inline` **spliced** `@square`’s body: `arith.muli` of the argument. `%a` (printed `%arg0`) is the operand that used to be passed to the call.
+3. `@square` itself is **still in the module**. Inlining copies; it does not delete.
+
+After this, nothing in the file calls `@square` anymore. It is unused **in this module**, but it is still **public** (no `private`), so a later linker could still use it. `--inline` does not care either way.
+
+To actually drop `@square`, mark it private and run dead-symbol elimination:
+
+```bash
+mlir-opt a.mlir --inline --symbol-dce
+```
+
+`--inline` first (call → body in `@main`). `--symbol-dce` second (unused `private @square` → deleted). Public `@square` survives `--symbol-dce` even after inlining.
 
 **`--symbol-dce`**  
 Dead **symbol** elimination, not SSA-value DCE. Deletes unused `private` functions (and other symbols) that nothing in the module references. Public functions stay, even if unused in this file, because a later linker or caller might need them.
@@ -146,7 +339,7 @@ module {
 }
 ```
 
-`--canonicalize` can drop dead **ops** inside a function (`Pure` values nobody uses). `--symbol-dce` drops dead **functions**. They complement each other.
+`--canonicalize` can drop dead **ops** inside a function (`Pure` values nobody uses). `--inline` copies a callee into a caller and leaves the original function. `--symbol-dce` drops dead **functions** (if they are `private`).
 
 **Lower** (high dialect → lower dialect, still MLIR, still mlir-opt):
 
@@ -165,19 +358,114 @@ Bufferization: tensor **values** become memref **buffers**. After this, later pa
 **`--reconcile-unrealized-casts`**  
 Conversion often inserts `builtin.unrealized_conversion_cast` as a temporary bridge between types. This pass removes the ones that now match. Run it last in a “to LLVM dialect” pipeline.
 
-### Pipeline (several passes, in order)
+### Pass manager
 
-```bash
-mlir-opt a.mlir --canonicalize --cse --symbol-dce --convert-scf-to-cf
+A **pass** is one rewrite. A **pass manager** (`mlir::PassManager`) is what **runs a list of passes**, in order, on the **right ops**. `mlir-opt --canonicalize --cse` does not “call canonicalize then cse by magic”; it **builds a pass manager** and `run`s it on the parsed module. `--dump-pass-pipeline` prints that manager. A **pipeline** is the list (and nesting) you put in it.
+
+```text
+pass           one rewrite (canonicalize, cse, convert-scf-to-cf)
+pipeline       ordered list, possibly nested
+PassManager    the runner  (C++ object; mlir-opt builds one for you)
 ```
 
-Or one pipeline string (order is left to right, nested on a parent op):
+Same idea as [passes](README-summary.md#3-pass): dialect = vocabulary, pass = rewrite, **pass manager = the schedule**.
 
-```bash
-mlir-opt a.mlir --pass-pipeline='builtin.module(canonicalize,cse,symbol-dce,convert-scf-to-cf)'
+#### Nesting — which op a pass sees
+
+MLIR is nested ops. A pass is scheduled on **one parent op type**. It does not blindly walk the whole file unless you nest it that way.
+
+```text
+builtin.module {                 ← outer manager usually lives here
+  func.func @a { ... }           ← can nest a manager on each func.func
+  func.func @b { ... }
+}
 ```
 
-Optimize, then lower, then optimize again at the new level.
+```text
+builtin.module(                  # runs once on the module
+  canonicalize,
+  func.func(                     # cloned/run for every func.func
+    cse
+  ),
+  inline,                        # needs the module symbol table
+  symbol-dce
+)
+```
+
+| Nesting | What the pass can see |
+| --- | --- |
+| `builtin.module(cse)` | The whole module as one unit |
+| `func.func(cse)` | One function at a time; `@a` and `@b` cannot CSE against each other |
+| `symbol-dce` / `inline` | Must be on the **module** — they use `@` symbols, not one function’s body |
+
+`--inline` looks up `@square` in the module. `--symbol-dce` deletes unused `private` functions. Neither belongs inside `func.func(...)`. `--cse` is usually nested on `func.func` so each function is a separate CSE problem.
+
+That is why `--dump-pass-pipeline` prints **parentheses**, not a flat list. The dump is the pass manager.
+
+#### Two ways to fill the manager
+
+**Flags** (what you have been typing). `mlir-opt` wraps them in a default outer `builtin.module(...)` and picks a nest per pass:
+
+```bash
+mlir-opt a.mlir --canonicalize --cse --inline --symbol-dce
+```
+
+**Explicit pipeline string** — you control the nest:
+
+```bash
+mlir-opt a.mlir --pass-pipeline='builtin.module(canonicalize,func.func(cse),inline,symbol-dce)'
+```
+
+Order is **left to right**. Nested `func.func(...)` runs in full on `@a`, then on `@b`, before the next sibling at module level.
+
+Always confirm with:
+
+```bash
+mlir-opt a.mlir --canonicalize --cse --inline --symbol-dce --dump-pass-pipeline
+```
+
+If the dump’s nesting is not what you meant, use `--pass-pipeline=` instead of a pile of flags.
+
+#### C++ (when you write a tool)
+
+`mlir-opt` is a CLI over this. A custom tool does the same in code:
+
+```cpp
+mlir::PassManager pm(context);
+
+// module-level
+pm.addPass(mlir::createCanonicalizerPass());
+
+// nested: one CSE run per func.func  →  func.func(cse)
+mlir::OpPassManager &fnPM = pm.nest<mlir::func::FuncOp>();
+fnPM.addPass(mlir::createCSEPass());
+
+pm.addPass(mlir::createInlinerPass());
+pm.addPass(mlir::createSymbolDCEPass());
+
+if (failed(pm.run(moduleOp)))
+  return failure();
+```
+
+| C++ | Text pipeline |
+| --- | --- |
+| `pm.addPass(...)` | a name inside `builtin.module(...)` |
+| `pm.nest<func::FuncOp>()` | `func.func(...)` |
+| `pm.run(moduleOp)` | what `mlir-opt` does after parse |
+
+`OpPassManager` is the nested manager (one op type). `PassManager` is the top-level manager (usually on `builtin.module`).
+
+#### Pass kinds (enough to read dumps)
+
+| Kind | Role |
+| --- | --- |
+| **Transformation** | Changes IR (optimize or lower) |
+| **Analysis** | Computes facts (liveness, aliases); later passes may query them |
+| **Operation pass** | Restricted to one op type (`func.func`, `builtin.module`, …) |
+
+With assertions on, the manager **verifies IR after each pass** (`--verify-each`). A broken pass fails there instead of producing mystery IR later.
+
+Failure: if a pass returns failure, `pm.run` fails and `mlir-opt` exits nonzero. Debug with `--dump-pass-pipeline` (the plan) and `--mlir-print-ir-after-all` (the trace) below.
 
 ### Debugging the pipeline
 
@@ -411,9 +699,14 @@ $BIN/mlir-opt $MLIR
 # optimize (same dialect)
 $BIN/mlir-opt $MLIR --canonicalize
 $BIN/mlir-opt $MLIR --canonicalize --cse --symbol-dce
+$BIN/mlir-opt $MLIR --inline
 
 # which passes will run (no IR dump)
 $BIN/mlir-opt $MLIR --canonicalize --cse --symbol-dce --dump-pass-pipeline
+
+# explicit pass manager (nest CSE on each function)
+$BIN/mlir-opt $MLIR --pass-pipeline='builtin.module(canonicalize,func.func(cse),inline,symbol-dce)' \
+  --dump-pass-pipeline
 
 # IR after every pass
 $BIN/mlir-opt $MLIR --canonicalize --cse --symbol-dce \

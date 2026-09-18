@@ -233,7 +233,7 @@ A **pass** walks the IR and does a **transformation**, **optimization**, or **an
 
 **Dialect = vocabulary. Pass = rewrite.**
 
-Run **both** kinds with `mlir-opt` (or a PassManager). A **pipeline** is a list of passes.
+Run **both** kinds with `mlir-opt` (or a **PassManager**). A **pipeline** is the list of passes the manager will run, nested on op types (`builtin.module`, `func.func`, …). Details: [Pass manager](README-tools.md#pass-manager).
 
 `mlir-translate` is **not** a lowering pass. It only changes format (MLIR `llvm` dialect ↔ LLVM IR) after `mlir-opt` has already lowered to `llvm`. See [MLIR tools](README-tools.md#optimize-vs-lower-vs-translate).
 
