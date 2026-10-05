@@ -62,7 +62,7 @@ module {
 }
 ```
 
-Mixed dialects is normal:
+Mixing dialects is normal:
 
 | Text | Dialect / op | Role |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ Mixed dialects is normal:
 
 ### Why `return` is compulsory
 
-Every finished block needs a **terminator**. For `func.func` that is `func.return`.
+Every finished block needs a **terminator**. For `func.func`, that is `func.return`.
 
 ```mlir
 func.func @add() -> i32 {
@@ -136,7 +136,7 @@ func.func @add() -> i32
 func.func @add(%arg0: i32, %arg1: i32) -> i32
 ```
 
-These are SSA **block arguments** from the caller. Assigned once; do not write `%arg0 = ...` again.
+These are SSA **block arguments** from the caller. They are assigned once; do not write `%arg0 = ...` again.
 
 ```mlir
 func.func @add(%0: i32, %1: i32) -> i32 {
@@ -261,10 +261,10 @@ func.call @missing() : () -> i32
 
 `// CHECK...` lines are **comments**. MLIR ignores them. They are instructions for **FileCheck**.
 
-1. A `RUN` line starts a tool (usually `mlir-opt`)
-2. That tool prints IR
-3. FileCheck looks for your patterns in that printout
-4. All found in the right place → **PASS**; otherwise **FAIL**
+1. A `RUN` line starts a tool (usually `mlir-opt`).
+2. That tool prints IR.
+3. FileCheck looks for your patterns in that printout.
+4. If every pattern is found in the right place, the result is **PASS**; otherwise **FAIL**.
 
 ```text
 // RUN: mlir-opt %s | FileCheck %s
@@ -276,7 +276,7 @@ func.call @missing() : () -> i32
 | `mlir-opt %s` | Parse / print (add flags to run passes) |
 | `FileCheck %s` | Read CHECK lines from this same file |
 
-Colon with **no space**: `// CHECK-LABEL:` not `// CHECK-LABEL :`.
+Write the colon with **no space**: `// CHECK-LABEL:` not `// CHECK-LABEL :`.
 
 ### The four directives
 
@@ -317,7 +317,7 @@ FileCheck on the printed IR:
 
 Later: `CHECK-NOT`, `CHECK-DAG`, `CHECK-EMPTY`.
 
-Regex so you do not hard-code SSA names (`%0` vs `%c20`):
+Use a regex so you do not hard-code SSA names (`%0` vs `%c20`):
 
 ```text
 // CHECK: %[[A:.*]] = arith.constant 20 : i32
@@ -352,7 +352,7 @@ They do not overlap.
 // RUN: mlir-opt %s --convert-scf-to-cf | FileCheck %s
 ```
 
-A comment. MLIR ignores it; **lit** executes it. Several `RUN` lines: all must succeed. No extra flags = parse and print (round-trip).
+It is a comment. MLIR ignores it; **lit** executes it. Several `RUN` lines: all must succeed. No extra flags = parse and print (round-trip).
 
 ### How you run it
 
@@ -388,7 +388,7 @@ Other substitutions: `%S` source dir, `%t` temp file, `%T` temp dir.
 
 ## 9. Commands to run on this machine
 
-More on each binary: [MLIR tools](README-tools.md). Tools are in the LLVM build `bin` directory.
+More on each binary is in [MLIR tools](README-tools.md). Tools are in the LLVM build `bin` directory.
 
 | Tool | What it does | Command |
 | --- | --- | --- |

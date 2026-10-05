@@ -60,7 +60,7 @@ Older path:
 source → frontend → LLVM IR → machine code
 ```
 
-LLVM IR is **low-level** (load, store, add, branch). Excellent for CPU codegen. For ML and GPU, lowering there too early **drops the meaning** (“this is a matmul”). After that you mostly see loads and stores.
+LLVM IR is **low-level** (load, store, add, branch). It is excellent for CPU codegen. For ML and GPU, lowering there too early **drops the meaning** (“this is a matmul”). After that you mostly see loads and stores.
 
 MLIR keeps **several abstraction levels** in one framework: optimize while the high-level meaning is still there, then lower step by step.
 
@@ -109,7 +109,7 @@ Scalar math. No tensors, no memory. Suffix `i` = integer, `f` = float.
 
 #### func
 
-These are **operations**, not “sub functions.”
+These are **operations**, not ordinary functions.
 
 | Op | Role |
 | --- | --- |
@@ -119,7 +119,7 @@ These are **operations**, not “sub functions.”
 
 #### scf (Structured Control Flow)
 
-Nested regions, not raw goto: `scf.if`, `scf.for`, `scf.while`, `scf.yield`. Later can lower to `cf` (`cf.br`, `cf.cond_br`).
+Nested regions, not raw goto: `scf.if`, `scf.for`, `scf.while`, `scf.yield`. These can later lower to `cf` (`cf.br`, `cf.cond_br`).
 
 #### tensor
 
@@ -138,11 +138,11 @@ Buffer in memory: alloc / load / **store** / dealloc. “Where it lives.”
 
 #### linalg (Linear Algebra)
 
-Whole kernels: `matmul`, `conv_2d`, `fill`, `generic`. `arith.muli` is one scalar multiply; `linalg.matmul` is still visibly a matmul (tile / fuse / GPU). Can sit on tensor or memref types.
+Whole kernels: `matmul`, `conv_2d`, `fill`, `generic`. `arith.muli` is one scalar multiply; `linalg.matmul` is still visibly a matmul (tile / fuse / GPU). It can sit on tensor or memref types.
 
 #### affine
 
-Affine = linear form + constant, compile-time coefficients (`2 * d0 + d1 + 8`). Not `d0 * d1`.
+Affine = linear form + constant, compile-time coefficients (`2 * d0 + d1 + 8`). It is not `d0 * d1`.
 
 `affine.for`, `affine.if`, `affine.load`, `affine.store`, `affine.apply`. Better dependence analysis than a general `scf.for`.
 
@@ -197,7 +197,7 @@ linalg / affine / scf / memref    loops over memory
 
 An **operation** is the main IR entity. Almost everything is an op: `module`, `func.func`, `arith.addi`, `func.return`.
 
-LLVM splits Function / BasicBlock / Instruction. MLIR is **nested ops**.
+LLVM splits Function / BasicBlock / Instruction. MLIR uses **nested ops**.
 
 | Part | Meaning | Example |
 | --- | --- | --- |
