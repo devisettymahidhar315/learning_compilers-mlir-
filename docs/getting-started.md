@@ -34,7 +34,7 @@ flowchart LR
 
 ## Run the tools
 
-From a build as in the [README](../README.md). Full map of binaries: [MLIR tools](README-tools.md).
+Start from a build, as in the [README](../README.md). Full map of binaries: [MLIR tools](README-tools.md).
 
 ```bash
 # See the printed IR

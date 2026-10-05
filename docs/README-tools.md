@@ -59,7 +59,7 @@ They do not overlap: **opt** rewrites (optimize *and* lower), **translate** chan
 
 ## Optimize vs lower vs translate
 
-Passes are mostly **two kinds**. Both run on **mlir-opt**.
+Passes are mostly of **two kinds**. Both run on **mlir-opt**.
 
 | Kind | What it does | Still MLIR? | Tool |
 | --- | --- | --- | --- |
@@ -105,11 +105,11 @@ write IR → mlir-opt (same or lower dialect) → print
 
 ## 1. mlir-opt
 
-The main tool. Reads `.mlir`, optionally runs **passes** (optimize *or* lower), prints IR (or writes `-o`). `--help` lists registered passes. Names match what you later put in a `PassManager`.
+This is the main tool. It reads `.mlir`, optionally runs **passes** (optimize *or* lower), and prints IR (or writes `-o`). `--help` lists registered passes. Names match what you later put in a `PassManager`.
 
 ### Parse and print (round-trip)
 
-No pass flags = parse, verify, print. Confirms the file is valid.
+No pass flags = parse, verify, print. This confirms the file is valid.
 
 ```bash
 mlir-opt a.mlir
@@ -138,7 +138,7 @@ Common subexpression elimination: if two ops compute the same thing, keep one an
 
 ### CSE vs canonicalize
 
-Same level (optimize), different job. CSE looks **across** ops. Canonicalize looks **at** one op and folds it.
+They stay at the same level (optimize) and do different jobs. CSE looks **across** ops. Canonicalize looks **at** one op and folds it.
 
 | | **CSE** | **Canonicalize** |
 | --- | --- | --- |
@@ -162,7 +162,7 @@ module {
 }
 ```
 
-Two constants that happen to be `10`, and two **identical** adds of those values. CSE and canonicalize do not do the same rewrite.
+The function has two constants that happen to be `10`, and two **identical** adds of those values. CSE and canonicalize do not do the same rewrite.
 
 **`--cse`** — merge duplicates, do **not** fold `10 + 10`:
 
@@ -269,7 +269,7 @@ Together they finish the job: `--canonicalize --cse` folds `+ 0` **and** keeps a
 **`--inline`**  
 Replace a **call** with a copy of the callee’s body. That removes call overhead and exposes the callee’s ops to later `--canonicalize` / `--cse`. It is still an optimize pass: dialects stay the same.
 
-Inlining needs a **caller** and a **callee**. A file with only arithmetic and no `func.call` / `call` does nothing — there is no call site to replace.
+Inlining needs a **caller** and a **callee**. On a file with only arithmetic and no `func.call` / `call`, `--inline` does nothing — there is no call site to replace.
 
 | | `--inline` | `--symbol-dce` |
 | --- | --- | --- |
@@ -361,7 +361,7 @@ Conversion often inserts `builtin.unrealized_conversion_cast` as a temporary bri
 
 ### Pass manager
 
-A **pass** is one rewrite. A **pass manager** (`mlir::PassManager`) is what **runs a list of passes**, in order, on the **right ops**. `mlir-opt --canonicalize --cse` does not “call canonicalize then cse by magic”; it **builds a pass manager** and `run`s it on the parsed module. `--dump-pass-pipeline` prints that manager. A **pipeline** is the list (and nesting) you put in it.
+A **pass** is one rewrite. A **pass manager** (`mlir::PassManager`) is what **runs a list of passes**, in order, on the **right ops**. `mlir-opt --canonicalize --cse` does not “call canonicalize then cse by magic”; it **builds a pass manager** and runs it on the parsed module. `--dump-pass-pipeline` prints that manager. A **pipeline** is the list (and nesting) you put in it.
 
 ```text
 pass           one rewrite (canonicalize, cse, convert-scf-to-cf)
@@ -373,7 +373,7 @@ Same idea as [passes](README-summary.md#3-pass): dialect = vocabulary, pass = re
 
 #### Nesting — which op a pass sees
 
-MLIR is nested ops. A pass is scheduled on **one parent op type**. It does not blindly walk the whole file unless you nest it that way.
+MLIR is a tree of nested ops. A pass is scheduled on **one parent op type**. It does not blindly walk the whole file unless you nest it that way.
 
 ```text
 builtin.module {                 ← outer manager usually lives here
@@ -405,7 +405,7 @@ That is why `--dump-pass-pipeline` prints **parentheses**, not a flat list. The 
 
 #### Two ways to fill the manager
 
-**Flags** (what you have been typing). `mlir-opt` wraps them in a default outer `builtin.module(...)` and picks a nest per pass:
+**Flags** are what you have been typing. `mlir-opt` wraps them in a default outer `builtin.module(...)` and picks a nest per pass:
 
 ```bash
 mlir-opt a.mlir --canonicalize --cse --inline --symbol-dce
